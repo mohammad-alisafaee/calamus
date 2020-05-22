@@ -28,6 +28,7 @@ from uuid import uuid4
 import typing
 import types
 
+from calamus.schema import JsonLDSchema
 from calamus.utils import normalize_type, normalize_value
 
 logger = logging.getLogger("calamus")
@@ -91,6 +92,7 @@ class _JsonLDField(fields.Field):
         self.field_name = field_name
 
         self.reverse = kwargs.get("reverse", False)
+        self.default = kwargs.get("default", None)
 
     @property
     def data_key(self):
@@ -106,20 +108,14 @@ class _JsonLDField(fields.Field):
         return super()._deserialize(value, attr, data, **kwargs)
 
 
-class Id(fields.String):
+class Id(_JsonLDField):
     """A node identifier."""
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, field_name="@id", **kwargs)
 
-    @property
-    def data_key(self):
-        """Return the (expanded) JsonLD field name."""
-        return "@id"
-
-    @data_key.setter
-    def data_key(self, value):
-        pass
+    def _deserialize(self, value, attr, data, **kwargs):
+        return super(_JsonLDField, self)._deserialize(value, attr, data, **kwargs)
 
 
 class String(_JsonLDField, fields.String):
@@ -183,7 +179,18 @@ class Nested(_JsonLDField, fields.Nested):
         if not isinstance(self.nested, list):
             self.nested = [self.nested]
 
-        self.nested = sorted(self.nested)
+        nested = []
+
+        for n in self.nested:
+            if issubclass(n, JsonLDSchema):
+                nested.append(n)
+            else:
+                if hasattr(n, "__calamus_schema__"):
+                    nested.append(n.__calamus_schema__)
+                else:
+                    raise ValueError(f"Only calamus schema is allowed in nested fields, not {n}")
+
+        self.nested = sorted(nested)
 
     @property
     def schema(self):
