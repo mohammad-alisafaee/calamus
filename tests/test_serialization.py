@@ -265,3 +265,48 @@ def test_multiple_nested_flattened_serialization():
     assert book2["@type"] == ["http://schema.org/Book"]
     assert "http://schema.org/author" in book2
     assert book2["http://schema.org/author"][0]["@id"] == a._id
+
+
+def test_blank_node_serialization():
+    """Test serialization with blank-node ids."""
+
+    class A(object):
+        def __init__(self, _id, name):
+            self._id = _id
+            self.name = name
+
+    class B(object):
+        def __init__(self, _id, value):
+            self._id = _id
+            self.value = value
+
+    schema = fields.Namespace("http://schema.org/")
+
+    class ASchema(JsonLDSchema):
+        _id = fields.BlankNodeId()
+        name = fields.String(schema.name)
+
+        class Meta:
+            rdf_type = schema.A
+            model = A
+
+    class BSchema(JsonLDSchema):
+        _id = fields.BlankNodeId()
+        value = fields.Nested(schema.specifiedBy, ASchema)
+
+        class Meta:
+            rdf_type = schema.B
+            model = B
+
+    b = B("dummyid2", A("dummyid1", "test"))
+
+    jsonld = BSchema().dump(b)
+
+    assert "@id" in jsonld
+    assert jsonld["@id"] == "_:dummyid2"
+    assert "http://schema.org/specifiedBy" in jsonld
+
+    dumped_a = jsonld["http://schema.org/specifiedBy"]
+
+    assert "@id" in dumped_a
+    assert dumped_a["@id"] == "_:dummyid1"
