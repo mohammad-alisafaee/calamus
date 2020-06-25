@@ -16,15 +16,24 @@
     limitations under the License.
 
 .. image:: https://github.com/SwissDataScienceCenter/calamus/blob/master/docs/reed.png?raw=true
-   :scale: 50
    :align: center
 
 ==================================================
- calamus: Json-LD Serialization Libary for Python
+ calamus: JSON-LD Serialization Library for Python
 ==================================================
 
+.. image:: https://readthedocs.org/projects/calamus/badge/?version=latest
+   :target: https://calamus.readthedocs.io/en/latest/en/latest/?badge=latest
+   :alt: Documentation Status
+
+.. image:: https://github.com/SwissDataScienceCenter/calamus/workflows/Test,%20Integration%20Tests%20and%20Deploy/badge.svg
+   :target: https://github.com/SwissDataScienceCenter/calamus/actions?query=workflow%3A%22Test%2C+Integration+Tests+and+Deploy%22+branch%3Amaster
+
+.. image:: https://badges.gitter.im/SwissDataScienceCenter/calamus.svg
+   :target: https://gitter.im/SwissDataScienceCenter/calamus?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge
+
 calamus is a library built on top of marshmallow to allow (de-)Serialization
-of Python classes to Json-LD
+of Python classes to JSON-LD
 
 
 Installation
@@ -53,7 +62,7 @@ Assuming you have a class like
             self._id = _id
             self.name = name
 
-Declare schemas
+Declare schemes
 ---------------
 You can declare a schema for serialization like
 ::
@@ -76,7 +85,7 @@ Make sure to set ``rdf_type`` to the RDF triple type you want get and
 Serializing objects ("Dumping")
 -------------------------------
 
-You can now easily serialize python classes to Json-LD
+You can now easily serialize python classes to JSON-LD
 
 ::
 
@@ -94,7 +103,7 @@ You can now easily serialize python classes to Json-LD
 Deserializing objects ("Loading")
 ---------------------------------
 
-You can also easily deserialize Json-LD to python objects
+You can also easily deserialize JSON-LD to python objects
 
 ::
 
@@ -105,3 +114,9 @@ You can also easily deserialize Json-LD to python objects
     }
     book = BookSchema().load(data)
     #<Book(_id="http://example.com/books/1", name="Ilias")>
+
+
+Support
+=======
+
+You can reach us on our `Gitter Channel <https://gitter.im/SwissDataScienceCenter/calamus>`_.

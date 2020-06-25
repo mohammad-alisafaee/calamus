@@ -15,7 +15,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Marshmallow fields for use with Json-LD."""
+"""Marshmallow fields for use with JSON-LD."""
 
 import marshmallow.fields as fields
 from marshmallow.base import SchemaABC
@@ -34,7 +34,7 @@ from calamus.utils import normalize_type, normalize_value
 logger = logging.getLogger("calamus")
 
 
-class IRI(object):
+class IRIReference(object):
     """ Represent an IRI in a namespace."""
 
     def __init__(self, namespace, name):
@@ -47,20 +47,20 @@ class IRI(object):
 
     def __repr__(self):
         """Representation of IRI."""
-        return 'IRI(namespace="{namespace}", name="{name}")'.format(namespace=self.namespace, name=self.name)
+        return 'IRIReference(namespace="{namespace}", name="{name}")'.format(namespace=self.namespace, name=self.name)
 
     def __eq__(self, other):
-        """Check equality between this and an other IRI."""
+        """Check equality between this and an other IRIReference."""
         expanded = str(self)
 
-        if isinstance(other, IRI):
+        if isinstance(other, IRIReference):
             other = str(other)
 
         return expanded == other
 
 
 class BlankNodeId(object):
-    """ Represent an IRI in a namespace."""
+    """ A blank/anonymous node identifier."""
 
     def __init__(self, name=None):
         self.name = name
@@ -78,7 +78,7 @@ class Namespace(object):
         self.namespace = namespace
 
     def __getattr__(self, name):
-        return IRI(self, name)
+        return IRIReference(self, name)
 
     def __str__(self):
         return self.namespace
@@ -129,6 +129,22 @@ class String(_JsonLDField, fields.String):
         if self.parent.opts.add_value_types:
             value = {"@value": value, "@type": "http://www.w3.org/2001/XMLSchema#string"}
         return value
+
+
+class IRI(String):
+    """An external IRI reference."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _serialize(self, value, attr, obj, **kwargs):
+        value = super()._serialize(value, attr, obj, **kwargs)
+        return {"@id": value}
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        if "@id" in value:
+            value = value["@id"]
+        return super()._deserialize(value, attr, data, **kwargs)
 
 
 class Integer(_JsonLDField, fields.Integer):
@@ -196,7 +212,7 @@ class Nested(_JsonLDField, fields.Nested):
     def schema(self):
         """The nested Schema object.
 
-        This method was copied from marshmallow and modified to support multiple different nested schemas.
+        This method was copied from marshmallow and modified to support multiple different nested schemes.
         """
         if not self._schema:
             # Inherit context from parent.
