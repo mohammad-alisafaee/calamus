@@ -17,6 +17,9 @@
 # limitations under the License.
 """Marshmallow fields for use with JSON-LD."""
 
+from functools import total_ordering
+
+import lazy_object_proxy
 import marshmallow.fields as fields
 from marshmallow.base import SchemaABC
 from marshmallow import class_registry, utils
@@ -32,7 +35,8 @@ from calamus.utils import normalize_type, normalize_value
 logger = logging.getLogger("calamus")
 
 
-class IRI(object):
+@total_ordering
+class IRIReference(object):
     """ Represent an IRI in a namespace."""
 
     def __init__(self, namespace, name):
@@ -45,16 +49,23 @@ class IRI(object):
 
     def __repr__(self):
         """Representation of IRI."""
-        return 'IRI(namespace="{namespace}", name="{name}")'.format(namespace=self.namespace, name=self.name)
+        return 'IRIReference(namespace="{namespace}", name="{name}")'.format(namespace=self.namespace, name=self.name)
 
     def __eq__(self, other):
-        """Check equality between this and an other IRI."""
+        """Check equality between this and an other IRIReference."""
         expanded = str(self)
 
-        if isinstance(other, IRI):
+        if isinstance(other, IRIReference):
             other = str(other)
 
         return expanded == other
+
+    def __lt__(self, other):
+        """Compare this with another IRI."""
+        return str(self) < str(other)
+
+    def __hash__(self):
+        return str(self).__hash__()
 
 
 class Namespace(object):
@@ -64,7 +75,7 @@ class Namespace(object):
         self.namespace = namespace
 
     def __getattr__(self, name):
-        return IRI(self, name)
+        return IRIReference(self, name)
 
     def __str__(self):
         return self.namespace
@@ -73,15 +84,18 @@ class Namespace(object):
 class _JsonLDField(fields.Field):
     """Internal class that enables marshmallow fields to be serialized with a JsonLD field name."""
 
-    def __init__(self, field_name, *args, **kwargs):
+    def __init__(self, field_name=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.field_name = field_name
 
         self.reverse = kwargs.get("reverse", False)
+        self.init_name = kwargs.get("init_name", None)
 
     @property
     def data_key(self):
         """Return the (expanded) JsonLD field name."""
+        if self.field_name is None:
+            raise ValueError("field_name was not set for {} in schema {}".format(self.name, self.root.__class__))
         return str(self.field_name)
 
     @data_key.setter
@@ -93,23 +107,14 @@ class _JsonLDField(fields.Field):
         return super()._deserialize(value, attr, data, **kwargs)
 
 
-class Id(fields.String):
+class Id(_JsonLDField, fields.String):
     """A node identifier."""
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    @property
-    def data_key(self):
-        """Return the (expanded) JsonLD field name."""
-        return "@id"
-
-    @data_key.setter
-    def data_key(self, value):
-        pass
+        super().__init__(field_name="@id", *args, **kwargs)
 
 
-class BlankNodeId(fields.String):
+class BlankNodeId(_JsonLDField, fields.String):
     """ A blank/anonymous node identifier."""
 
     def __init__(self, *args, **kwargs):
@@ -148,6 +153,22 @@ class String(_JsonLDField, fields.String):
         return value
 
 
+class IRI(String):
+    """An external IRI reference."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _serialize(self, value, attr, obj, **kwargs):
+        value = super()._serialize(value, attr, obj, **kwargs)
+        return {"@id": value}
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        if "@id" in value:
+            value = value["@id"]
+        return super()._deserialize(value, attr, data, **kwargs)
+
+
 class Integer(_JsonLDField, fields.Integer):
     """An integer field."""
 
@@ -174,8 +195,8 @@ class Float(_JsonLDField, fields.Float):
         return value
 
 
-class DateTime(_JsonLDField, fields.DateTime):
-    """A date/time field."""
+class Boolean(_JsonLDField, fields.Boolean):
+    """A Boolean field."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -183,8 +204,41 @@ class DateTime(_JsonLDField, fields.DateTime):
     def _serialize(self, value, attr, obj, **kwargs):
         value = super()._serialize(value, attr, obj, **kwargs)
         if self.parent.opts.add_value_types:
+            value = {"@value": value, "@type": "http://www.w3.org/2001/XMLSchema#boolean"}
+        return value
+
+
+class DateTime(_JsonLDField, fields.DateTime):
+    """A date/time field."""
+
+    def __init__(self, *args, extra_formats=("%Y-%m-%d",), **kwargs):
+        super().__init__(*args, **kwargs)
+        self._extra_formats = extra_formats
+
+    def _serialize(self, value, attr, obj, **kwargs):
+        value = super()._serialize(value, attr, obj, **kwargs)
+        if self.parent.opts.add_value_types:
             value = {"@value": value, "@type": "http://www.w3.org/2001/XMLSchema#dateTime"}
         return value
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        try:
+            return super()._deserialize(value, attr, data, **kwargs)
+        except ValidationError:
+            pass
+
+        # Try with extra formats
+        for format in self._extra_formats:
+            try:
+                original_format = self.format
+                self.format = format
+                return super()._deserialize(value, attr, data, **kwargs)
+            except ValidationError:
+                pass
+            finally:
+                self.format = original_format
+
+        raise self.make_error("invalid", input=value, obj_type=self.OBJ_TYPE)
 
 
 class Nested(_JsonLDField, fields.Nested):
@@ -254,6 +308,7 @@ class Nested(_JsonLDField, fields.Nested):
                         context=context,
                         load_only=self._nested_normalized_option("load_only"),
                         dump_only=self._nested_normalized_option("dump_only"),
+                        lazy=self.root.lazy,
                     )
                     self._schema["to"][model] = self._schema["from"][rdf_type]
         return self._schema
@@ -290,8 +345,12 @@ class Nested(_JsonLDField, fields.Nested):
         type_ = normalize_type(value["@type"])
 
         schema = self.schema["from"][str(type_)]
+
         if not schema:
             ValueError("Type {} not found in {}.{}".format(value["@type"], type(self.parent), self.data_key))
+
+        if schema.lazy:
+            return lazy_object_proxy.Proxy(lambda: schema.load(value, unknown=self.unknown, partial=partial))
         return schema.load(value, unknown=self.unknown, partial=partial)
 
     def _load(self, value, data, partial=None, many=False):
@@ -348,7 +407,8 @@ class Nested(_JsonLDField, fields.Nested):
 
     def _deserialize(self, value, attr, data, **kwargs):
         """Deserialize nested object."""
-        if "flattened" in kwargs and kwargs["flattened"]:
+
+        if kwargs.get("flattened", False):
             # could be id references, dereference them to continue deserialization
             value = self._dereference_flattened(value, attr, **kwargs)
 
@@ -360,10 +420,18 @@ class List(_JsonLDField, fields.List):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.ordered = kwargs.get("ordered", False)
 
     def _serialize(self, value, attr, obj, **kwargs):
         value = super()._serialize(value, attr, obj, **kwargs)
-        return {"@list": value}
+        return {"@list": value} if self.ordered else value
 
     def _deserialize(self, value, attr, data, **kwargs) -> typing.List[typing.Any]:
-        return super()._deserialize(value["@list"], attr, data, **kwargs)
+        if isinstance(value, dict):  # an ordered list
+            value = value["@list"]
+        return super(fields.List, self)._deserialize(value, attr, data, **kwargs)
+
+    @property
+    def opts(self):
+        """Return parent's opts."""
+        return self.parent.opts
