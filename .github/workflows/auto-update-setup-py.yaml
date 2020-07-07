@@ -12,7 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        ref: ${{ github.head_ref }}
         token: ${{ secrets.RENKU_CI_TOKEN }}
     - name: Setup python
       uses: actions/setup-python@v1
