@@ -19,7 +19,7 @@
 [tool.poetry]
 name = "calamus"
 version = "0.3.0"
-description = "calamus is life."
+description = "calamus is life 2."
 authors = ["Swiss Data Science Center <contact@datascience.ch>"]
 license = "Apache-2.0"
 readme = "README.rst"
