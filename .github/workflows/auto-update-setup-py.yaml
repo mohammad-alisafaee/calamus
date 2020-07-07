@@ -32,4 +32,4 @@ jobs:
         git config --local user.name "RenkuBot"
         git add setup.py
         git commit -m 'chore: automatically update setup.py' || true
-        git push origin ${{ github.head_ref }}
+        git push
